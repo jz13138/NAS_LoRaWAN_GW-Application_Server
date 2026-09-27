@@ -20,11 +20,14 @@ services:
       - VIRTUAL_PROTO=http
       - LETSENCRYPT_HOST=${LETSENCRYPT_HOST_CHIRPSTACK:-}
       - LETSENCRYPT_EMAIL=${LETSENCRYPT_EMAIL:-}
-    labels:
-      - "com.github.jrcs.letsencrypt_nginx_proxy_companion.nginx_proxy=true"
     networks:
       - default
       - site1
+    # No label here on purpose. docker-gen discovers vhosts from VIRTUAL_HOST
+    # alone, while acme-companient identifies the proxy itself by the
+    # com.github.jrcs.letsencrypt_nginx_proxy_companion.nginx_proxy label and
+    # takes the first container carrying it. Put that label on an app container
+    # and the companion reloads the wrong container and stops issuing certs.
     # No published port. 8080 is reachable through the reverse proxy only,
     # otherwise it bypasses TLS and stays open on every host interface.
 
@@ -68,8 +71,6 @@ services:
       - VIRTUAL_PROTO=http
       - LETSENCRYPT_HOST=${LETSENCRYPT_HOST_CHIRPSTACK_REST:-}
       - LETSENCRYPT_EMAIL=${LETSENCRYPT_EMAIL:-}
-    labels:
-      - "com.github.jrcs.letsencrypt_nginx_proxy_companion.nginx_proxy=true"
     networks:
       - default
       - site1

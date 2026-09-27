@@ -13,13 +13,36 @@ from the internet except the web UI, and even that is only for convenience.
 | Change | Reason |
 |--------|--------|
 | `chirpstack` and `chirpstack-rest-api` join the external `site1` network | `docker-gen` only emits an upstream for containers on a network it can reach. The template drops everything else as `(unreachable)`. |
-| Both services carry the `nginx_proxy=true` label and `VIRTUAL_*` env | Auto-discovery. An empty `VIRTUAL_HOST` is ignored, so the stack still starts with no proxy in front. |
+| Both services set `VIRTUAL_HOST` and `LETSENCRYPT_HOST` | Auto-discovery. An empty `VIRTUAL_HOST` is ignored, so the stack still starts with no proxy in front. |
 | The published `8080` and `8090` are gone | While they are published on `0.0.0.0` they stay reachable from the LAN, and everything nginx adds, TLS and auth, is bypassable. |
 | The published `1883` is gone | Only `chirpstack` and the two bridges need the broker, and they reach it over the compose network. This was an anonymous MQTT broker on every interface. |
 | `1700/udp` and `3001/tcp` stay published but bindable | Unused on a single-host setup, but needed the moment a gateway lives somewhere else. `SEMTECH_UDP_BIND` and `BASIC_STATION_BIND` let you pin them to one LAN address. |
 | `pull_policy: build` on the forwarder | The image is built locally and exists in no registry. Without this a plain `docker compose up` tries to pull it and fails. |
 
 `postgres` and `redis` are untouched, still private to the compose network.
+
+## Do not label the app containers
+
+`docker-gen` builds vhosts from the `VIRTUAL_HOST` environment variable alone.
+It does not need a label, and adding the obvious-looking one breaks certificate
+issuance:
+
+```
+com.github.jrcs.letsencrypt_nginx_proxy_companion.nginx_proxy=true
+```
+
+`acme-companient` uses that same label to find *nginx itself*. Its
+`get_nginx_proxy_container` calls `labeled_cid`, which returns the ID of **every**
+container carrying the label, then asks the Docker API about all of them at once.
+With the label on an application container that lookup 404s, and the companion
+logs
+
+```
+Error: nginx-proxy container <id> <id> <id> isn't running.
+```
+
+and sleeps for an hour. The vhost still appears, over plain HTTP, with no
+certificate. That label belongs on `nginx-web` alone.
 
 ## Prerequisites
 
