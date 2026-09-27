@@ -1,0 +1,104 @@
+{
+  "_comment": [
+    "Desired state for the LoRa Basics Modem end devices reached over the",
+    "Basic Station gateway path. Applied by tools/apply-device-profiles.sh,",
+    "which creates or updates whatever is missing or stale, matching on name.",
+    "",
+    "Basic Station is a gateway protocol, so nothing in here is Basic Station",
+    "specific. A device profile describes the end device that sits behind the",
+    "gateway, and for this stack that is the LoRa Basics Modem. If you put a",
+    "different Basic Station node on port 3001, give it its own profile.",
+    "",
+    "The two profiles differ in LoRaWAN class, not in firmware. LBM ships as a",
+    "stack library with a board port on top (LBM-E is the same stack embedded in",
+    "an LR1121), so the regular and low-power builds share a MAC version, a set",
+    "of fPorts and a payload format, and a single profile would serve both. What",
+    "actually needs a second profile is Class C, because it changes what the",
+    "server may do: Class C keeps the receive window open, so downlinks, FUOTA,",
+    "remote multicast and ALC sync land without waiting for an uplink, at the",
+    "cost of the power budget that makes LBM's Class A worth using at all.",
+    "Pick the Class A profile unless the node is mains powered or the",
+    "application genuinely needs server-initiated downlinks.",
+    "",
+    "LBM implements TS001-LoRaWAN L2 1.0.4 and RP2-1.0.3, so macVersion and",
+    "regParamsRevision below are not the ChirpStack UI defaults of 1.0.3 and A.",
+    "Class B is off in both: it has to be compiled in (LBM_CLASS_B) and needs",
+    "beacon synchronisation, which on LBM means running the ALC sync package.",
+    "ABP is off in both because LBM's ABP mode stores no non-volatile context,",
+    "so a reset means a new session that the server has never seen.",
+    "",
+    "uplinkInterval 60 matches PERIODICAL_UPLINK_DELAY_S in the stock example.",
+    "ChirpStack only uses it to decide when a device counts as inactive, so it",
+    "does not have to match if your firmware differs.",
+    "",
+    "tags are user-defined and are copied into every integration event of every",
+    "device using the profile, which is what makes them useful for filtering."
+  ],
+
+  "application": {
+    "name": "lora-basics-modem",
+    "description": "LoRa Basics Modem end devices, reached through the Basic Station gateway path.",
+    "tags": {
+      "gateway-path": "basic-station",
+      "device": "lora-basics-modem"
+    }
+  },
+
+  "deviceProfiles": [
+    {
+      "name": "LoRa Basics Modem EU868 Class A",
+      "description": "Default LBM build: OTAA, Class A, 60 s periodical uplink. The low-power choice.",
+      "region": "EU868",
+      "regionConfigId": "eu868",
+      "macVersion": "LORAWAN_1_0_4",
+      "regParamsRevision": "RP002_1_0_3",
+      "adrAlgorithmId": "default",
+      "supportsOtaa": true,
+      "supportsClassB": false,
+      "supportsClassC": false,
+      "uplinkInterval": 60,
+      "deviceStatusReqInterval": 1,
+      "flushQueueOnActivate": true,
+      "autoDetectMeasurements": true,
+      "rx1Delay": 0,
+      "payloadCodecRuntime": "JS",
+      "codecScript": "lbm-codec.js",
+      "isRelay": false,
+      "isRelayEd": false,
+      "allowRoaming": false,
+      "tags": {
+        "device": "lora-basics-modem",
+        "class": "A",
+        "activation": "otaa"
+      }
+    },
+    {
+      "name": "LoRa Basics Modem EU868 Class C",
+      "description": "Same stack in Class C, so the server can push downlinks, FUOTA and multicast without waiting for an uplink.",
+      "region": "EU868",
+      "regionConfigId": "eu868",
+      "macVersion": "LORAWAN_1_0_4",
+      "regParamsRevision": "RP002_1_0_3",
+      "adrAlgorithmId": "default",
+      "supportsOtaa": true,
+      "supportsClassB": false,
+      "supportsClassC": true,
+      "classCTimeout": 5,
+      "uplinkInterval": 60,
+      "deviceStatusReqInterval": 1,
+      "flushQueueOnActivate": true,
+      "autoDetectMeasurements": true,
+      "rx1Delay": 0,
+      "payloadCodecRuntime": "JS",
+      "codecScript": "lbm-codec.js",
+      "isRelay": false,
+      "isRelayEd": false,
+      "allowRoaming": false,
+      "tags": {
+        "device": "lora-basics-modem",
+        "class": "C",
+        "activation": "otaa"
+      }
+    }
+  ]
+}

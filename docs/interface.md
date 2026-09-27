@@ -30,10 +30,10 @@ reverse proxy, see [nginx-integration.md](nginx-integration.md).
    │ UI and gRPC            │ no host port, TLS at the proxy │
    └────────────────────────┴────────────────────────────────┘
    │
-   ┌────────────────────────┬────────────────────────────────┐
-   │ 8090  HTTP             │ chirpstack-rest-api            │
-   │ REST API               │ --insecure, needs htpasswd     │
-   └────────────────────────┴────────────────────────────────┘
+   ┌──────────────────────────┬──────────────────────────────────┐
+   │ 8090  HTTP               │ chirpstack-rest-api              │
+   │ REST API                 │ forwards Authorization header    │
+   └──────────────────────────┴──────────────────────────────────┘
 
 ╔════════════════════════════════════════════════════════════════════════════╗
 ║ STEP 3   still published on the host, pin them in .env if unused           ║
@@ -126,10 +126,12 @@ need LAN access to it.
   `you-must-replace-this`. It signs UI sessions and API tokens, so anyone who
   can reach the UI through the proxy can mint an admin token. Generate one with
   `openssl rand -base64 32`. The reverse proxy does not fix this.
-- `chirpstack-rest-api` runs with `--insecure`. In front of a public hostname
-  that is an unauthenticated device and tenant management API. Create an
-  `htpasswd` file before enabling its hostname.
+- `chirpstack-rest-api` adds no credentials of its own, it forwards whatever
+  `Authorization` header the caller sends. `--insecure` is about the plaintext
+  hop to `chirpstack:8080`, not about authentication, so the API is only as open
+  as its tokens. There are none by default, which makes it unusable rather than
+  open. See [rest-api.md](rest-api.md).
 - The Basic Station backend has empty `tls_cert` and `tls_key`, so it is
   plaintext. Unused on a single-host setup; do not expose it as is.
 - If the host has a routable interface, 1700 and 3001 are still open on every
-  interface unless pinned in `.env`.
+  interfa

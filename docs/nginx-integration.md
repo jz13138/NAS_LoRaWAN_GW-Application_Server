@@ -138,9 +138,14 @@ curl -I https://api.chirp.example.com    # expect 401 until htpasswd is set
 
 ## The REST API needs a password file
 
-`chirpstack-rest-api` runs with `--insecure`, which disables authentication
-entirely. In front of a public hostname that is an unauthenticated device and
-tenant management API. nginx basic auth is the only thing in the way.
+`chirpstack-rest-api` does no authentication of its own: it forwards the
+caller's `Authorization` header to ChirpStack and adds no credentials. Without a
+header it answers `no authorization provided`, so the API is not open, but
+there is nothing in front of it except this file. Behind a public hostname that
+is a management API for every tenant, device and gateway on the server, so
+nginx basic auth is worth having on top of the token check.
+
+See [rest-api.md](rest-api.md) for how the header is turned into a token.
 
 ```sh
 # htpasswd/ is mounted read-only inside the container, so generate on the host
