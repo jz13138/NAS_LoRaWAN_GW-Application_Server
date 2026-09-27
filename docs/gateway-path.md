@@ -31,6 +31,7 @@ touches TCP/IP at all.
  ┌──────────────────────────────────────────────────────────────┐
  │ NAS host  ·  USB bus  ·  cdc_acm driver  ·  ttyACM nodes     │
  └──────────────────────────────────────────────────────────────┘
+```
 
   Both nodes belong to the same physical device, so their numbers are fixed
   by the USB descriptor: function 1 is always ttyACM0, function 2 always
@@ -87,6 +88,7 @@ omitted `numSV` byte and those offsets yield garbage (a longitude near
 keep whichever yields a valid WGS84 coordinate that agrees with the NMEA
 `$GPGGA` sentence from the same sample.
 
+```
 ╔══════════════════════════════════════════════════════════════════════════╗
 ║ STEP 2   host → container, docker device pass-through                    ║
 ║                                                                          ║
@@ -102,7 +104,9 @@ keep whichever yields a valid WGS84 coordinate that agrees with the NMEA
 
                                       │
                                       ▼
+```
 
+```
 ╔══════════════════════════════════════════════════════════════════════════╗
 ║ STEP 3   inside the sx1302-hal-packet-forwarder container                ║
 ║                                                                          ║
@@ -121,7 +125,9 @@ server_address             SX1302_SERVER_ADDRESS     chirpstack-gateway-bridge
 serv_port_up               SX1302_SERV_PORT          1700
 serv_port_down             SX1302_SERV_PORT          1700
 gateway_ID                 SX1302_GATEWAY_ID         (empty keeps placeholder)
+```
 
+```
 ╔══════════════════════════════════════════════════════════════════════════╗
 ║ STEP 4   reset and power, before any packet is forwarded                 ║
 ║                                                                          ║
@@ -137,7 +143,9 @@ gateway_ID                 SX1302_GATEWAY_ID         (empty keeps placeholder)
 ║   and the concentrator simply never powers up                            ║
 ║                                                                          ║
 ╚══════════════════════════════════════════════════════════════════════════╝
+```
 
+```
 ╔══════════════════════════════════════════════════════════════════════════╗
 ║ STEP 5   the two traffic directions                                      ║
 ║                                                                          ║
@@ -159,7 +167,9 @@ gateway_ID                 SX1302_GATEWAY_ID         (empty keeps placeholder)
 ║         postgres 5432 and redis 6379, compose network only               ║
 ║                                                                          ║
 ╚══════════════════════════════════════════════════════════════════════════╝
+```
 
+```
 ╔════════════════════════════════════════════════════════════════════════════╗
 ║ THE WHOLE CHAIN, ONE LINE                                                  ║
 ║                                                                            ║
