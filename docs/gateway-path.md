@@ -17,25 +17,75 @@ touches TCP/IP at all.
 ║                                                                            ║
 ╚════════════════════════════════════════════════════════════════════════════╝
 
- ┌───────────────┐                  ┌────────────────────────────────────┐
- │ GPS receiver  │                  │ SX1302 CoreCell concentrator       │
- │ NMEA + PPS    │                  │ SX1302 + 2x SX1250 + STM32         │
- │ own USB cable │                  │ USB-SPI bridge                     │
- └───────────────┘                  └────────────────────────────────────┘
-         │  USB  CDC-ACM                               │  USB  CDC-ACM
-         ▼                                             ▼
-   /dev/ttyACM1                                  /dev/ttyACM0
-     time only                                   SPI + payload
-         │                                             │
-         └─────────────────────────────────────────────┴
+ ┌──────────────────────────────────────────────────────────────┐
+ │ one USB device: 0483:5740  STM32 Virtual ComPort, class ef   │
+ │ single configuration, four interfaces, two CDC functions     │
+ │                                                              │
+ │  1-1:1.0 (02) + 1-1:1.1 (0a)  function 1  ──▶  /dev/ttyACM0  │
+ │      SX1302: SPI bridge, concentrator EUI, payload           │
+ │                                                              │
+ │  1-1:1.2 (02) + 1-1:1.3 (0a)  function 2  ──▶  /dev/ttyACM1  │
+ │      u-blox MAX-M8C: NMEA 4.x + UBX on one stream            │
+ └──────────────────────────────────────────────────────────────┘
                                 ▼
- ┌────────────────────────────────────────────────────────────┐
- │ NAS host  ·  USB bus  ·  cdc_acm driver  ·  ttyACM nodes   │
- └────────────────────────────────────────────────────────────┘
+ ┌──────────────────────────────────────────────────────────────┐
+ │ NAS host  ·  USB bus  ·  cdc_acm driver  ·  ttyACM nodes     │
+ └──────────────────────────────────────────────────────────────┘
 
-  The device numbers come from USB enumeration order, not from the hardware.
-  A re-plug or a different boot order can swap ttyACM0 and ttyACM1; check with
-  ls /dev/ttyACM* /dev/serial/by-id/ and set SX1302_COM_PATH / SX1302_GPS_PATH.
+  Both nodes belong to the same physical device, so their numbers are fixed
+  by the USB descriptor: function 1 is always ttyACM0, function 2 always
+  ttyACM1. They cannot swap the way two separate USB devices can. If the
+  board is replaced or replugged into a different port, confirm with
+  ls /dev/ttyACM* and set SX1302_COM_PATH / SX1302_GPS_PATH to match.
+
+## GPS: u-blox MAX-M8C on ttyACM1
+
+The second CDC function is a u-blox MAX-M8C. NMEA 4.x and UBX arrive
+interleaved on the same stream: `$GPRMC`, `$GPVTG`, `$GPGGA`, `$GPGSA`,
+`$GPGSV` and `$GPGLL` flow continuously, `UBX-NAV-TIMEGPS` arrives
+periodically, and the rest answer only when polled. Verified live: 3D fix,
+9 satellites, 2.5 m horizontal accuracy.
+
+Talking to it needs nothing special beyond raw 8N1 at 9600 baud — the baud
+rate is a formality on CDC-ACM, the kernel ignores line coding, but the port
+must be in raw mode or framing gets mangled. Open blocking and use `select()`
+for timeouts. The forwarder holds the port while running, so stop it for a
+clean session and restart it after:
+
+```sh
+docker compose stop sx1302-hal-packet-forwarder
+# ... read and poll ...
+docker compose start sx1302-hal-packet-forwarder
+```
+
+There is no `termios` module and no `stty` on some hosts; on x86_64 Linux the
+same result comes from `fcntl.ioctl` with `TCSETS` (`0x5402`) and a 60-byte
+`struct termios` (`IIIIB32s3xII` — the `3x` padding produces no field, so the
+speeds sit at indices 6 and 7, not 7 and 8).
+
+UBX polls are `B5 62 | class | id | len_lo len_hi | payload | ck_a ck_b`.
+The Fletcher-8 checksum runs from CLASS, excluding the sync — the commonly
+cited `B5 62 01 07 00 00 1F 41` for NAV-PVT includes the sync and is ignored.
+Correct values, verified against the live receiver:
+
+| Message | Poll bytes |
+|---|---|
+| NAV-PVT (0x01/0x07) | `B5 62 01 07 00 00 08 19` |
+| NAV-SOL (0x01/0x06) | `B5 62 01 06 00 00 07 16` |
+| NAV-POSLLH (0x01/0x02) | `B5 62 01 02 00 00 03 0A` |
+| NAV-TIMEGPS (0x01/0x20) | `B5 62 01 20 00 00 21 64` |
+
+All UBX configuration is disabled — `CFG-MSG` is NAKed, so message rates
+cannot be changed and nothing can be written. The receiver is effectively
+read-only, which is all the forwarder needs.
+
+`NAV-PVT` here is 84 bytes, not the spec's 92. The fields through `hAcc`
+still sit at standard offsets, so parse `lon` at 24 and `lat` at 28 first —
+but verify the result, because on other firmware the layout shifts by the
+omitted `numSV` byte and those offsets yield garbage (a longitude near
+−103° is the tell). The robust approach is to try both 24/28 and 23/27 and
+keep whichever yields a valid WGS84 coordinate that agrees with the NMEA
+`$GPGGA` sentence from the same sample.
 
 ╔══════════════════════════════════════════════════════════════════════════╗
 ║ STEP 2   host → container, docker device pass-through                    ║
@@ -58,7 +108,7 @@ touches TCP/IP at all.
 ║                                                                          ║
 ║   /usr/local/bin/entrypoint.sh                                           ║
 ║     cp $SX1302_CONFIG  →  /tmp/global_conf.json   (writable copy)        ║
-║     set_key rewrites the five values below in that copy                  ║
+║     set_key rewrites the six values below in that copy                   ║
 ║     exec /opt/sx1302_hal/lora_pkt_fwd -c /tmp/global_conf.json           ║
 ║                                                                          ║
 ╚══════════════════════════════════════════════════════════════════════════╝
@@ -70,6 +120,7 @@ gps_tty_path               SX1302_GPS_PATH           /dev/ttyACM1
 server_address             SX1302_SERVER_ADDRESS     chirpstack-gateway-bridge
 serv_port_up               SX1302_SERV_PORT          1700
 serv_port_down             SX1302_SERV_PORT          1700
+gateway_ID                 SX1302_GATEWAY_ID         (empty keeps placeholder)
 
 ╔══════════════════════════════════════════════════════════════════════════╗
 ║ STEP 4   reset and power, before any packet is forwarded                 ║
@@ -131,7 +182,7 @@ serv_port_down             SX1302_SERV_PORT          1700
 |------|-------|--------------|
 | 1 | hardware | The SX1302 CoreCell and the GPS receiver each enumerate as their own CDC-ACM device. The STM32 on the CoreCell bridges the internal SPI bus to USB. |
 | 2 | host to container | `devices:` maps the two host nodes into the forwarder container unchanged. `/sys/class/gpio` is bind-mounted for the reset script. |
-| 3 | entrypoint | `entrypoint.sh` copies `global_conf.json` to `/tmp`, rewrites the five path and address keys from the environment, then `exec`s `lora_pkt_fwd`. |
+| 3 | entrypoint | `entrypoint.sh` copies `global_conf.json` to `/tmp`, rewrites the six path, address and identity keys from the environment, then `exec`s `lora_pkt_fwd`. |
 | 4 | reset | `lora_pkt_fwd` calls `./reset_lgw.sh start`, which powers and resets the concentrator through GPIO before any packet is forwarded. |
 | 5 | traffic | `lora_pkt_fwd` speaks the Semtech UDP protocol to the gateway bridge, which republishes everything over MQTT for ChirpStack. |
 
@@ -162,12 +213,18 @@ this one.
   The entrypoint warns on this case, but nothing else does.
 - On hosts that only expose the newer `gpiochip` interface and have no legacy
   `/sys/class/gpio`, the reset script cannot work and must be adapted.
-- `gateway_ID` is `AA555A0000000000` in the baked-in config. It has to match the
-  ID registered in ChirpStack, otherwise every `PUSH_DATA` is discarded as an
-  unknown gateway. Take the real value from `util_chip_id` or
-  `test_loragw_reg`.
-- Without GPS time on `ttyACM1`, a moving gateway produces uplocks ChirpStack
-  rejects, even though the radio path itself is fine.
+- `gateway_ID` is `AA555A0000000000` in the baked-in config. Set the real EUI64
+  in `.env` as `SX1302_GATEWAY_ID` — read it from the forwarder startup log
+  (`concentrator EUI: 0x...`) — and register the same value in ChirpStack.
+  Otherwise every `PUSH_DATA` is discarded as an unknown gateway. Empty keeps
+  the placeholder, which preserves the old behaviour of rejecting everything.
+- Without GPS time on `ttyACM1`, a moving gateway produces uplinks ChirpStack
+  rejects, even though the radio path itself is fine. For a stationary gateway
+  the forwarder falls back to its internal timestamp, which ChirpStack accepts
+  once the gateway is registered as static with a fixed position.
+- A tty hands bytes to whichever reader reads first. Probing the GPS while the
+  forwarder holds the port splits the stream between the two readers and
+  corrupts framing on both sides. Stop the forwarder for a clean session.
 - `server_address` is `localhost` in the shipped `global_conf.json` and is
   rewritten to `chirpstack-gateway-bridge` by the entrypoint. Running
   `lora_pkt_fwd` outside the entrypoint leaves it pointing at the container

@@ -91,6 +91,26 @@ network and taking their own hostname. Two things to watch:
   Doing it the other way round means a working service is down for the duration
   of the ACME issuance.
 
+`VIRTUAL_HOST` accepts comma-separated values, so a zero-downtime cutover is
+one env change and two recreates. This exact sequence moved a Collabora
+instance from an apex to a subdomain without dropping a request:
+
+```sh
+# phase 1: both names at once, docker-gen builds both vhosts,
+# acme-companion issues one SAN cert covering both
+VIRTUAL_HOST="old.example.com,new.example.com"
+docker compose up -d <service>   # verify the new URL serves + cert valid
+
+# phase 2: move every configured reference to the new name first
+# (Nextcloud: oc_appconfig wopi_url and public_wopi_url)
+
+# phase 3: drop the old name, recreate, verify the old URL 503s
+VIRTUAL_HOST="new.example.com"
+docker compose up -d <service>
+```
+
+`LETSENCRYPT_HOST` takes the same comma-separated form.
+
 ## Configure
 
 ```sh
@@ -217,6 +237,42 @@ deny all;
 - The Basic Station backend still has empty `tls_cert` and `tls_key`. It is
   plaintext and unused on a single-host setup. If you ever expose 3001, put it
   behind a hostname with a certificate.
+
+## Troubleshooting
+
+**A vhost 502s after its container was recreated.** When a container gets a new
+IP on `site1`, `docker-gen` rewrites `default.conf` — but it sometimes decides
+the result is unchanged and skips the reload signal to nginx, which keeps
+dialing the dead address:
+
+```
+connect() failed (111: Connection refused) while connecting to upstream,
+upstream: "http://172.29.16.6:80/..."
+```
+
+Compare the IP in the error with the container's current address
+(`docker inspect <name> --format ...`). If they differ, force the reload:
+
+```sh
+docker exec nginx-web nginx -t    # always test first; see below
+docker exec nginx-web nginx -s reload
+```
+
+**Always `nginx -t` before `nginx -s reload`.** A failed reload leaves the old
+config running with no warning in the access log, so every later change
+silently never applies. The usual cause is a dangling certificate reference:
+`acme-companion` deletes the `host.crt`-style symlinks for a hostname that no
+longer has a vhost, but a hand-maintained file may still reference them, and
+then *no* reload can succeed until the reference is removed or the symlinks are
+recreated.
+
+**Know which files are generated and which are yours.** `docker-gen` rewrites
+only `conf.d/default.conf`. Everything else in the nginx project —
+`conf.d/ipv6-vhosts.conf`, `conf.d/proxy.conf`, `vhost.d/*`, `htpasswd/*` — is
+hand-maintained and never touched. That split cuts both ways: your files
+survive every regeneration, but they also go stale without warning when a
+hostname they reference disappears. After removing a vhost, grep the
+hand-maintained files for its name.
 
 ## Rollback
 

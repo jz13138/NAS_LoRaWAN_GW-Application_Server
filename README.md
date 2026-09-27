@@ -93,6 +93,9 @@ is an unauthenticated management API on the internet.
 [docs/nginx-integration.md](docs/nginx-integration.md) has the details: the
 htpasswd recipe, splitting gRPC from the UI on port 8080, why `NETWORK_ACCESS=internal`
 breaks this particular image, and why 1883 and 1700 cannot be proxied at all.
+Its Troubleshooting section covers the two failure modes found in production:
+a stale upstream after a container recreate (502 with `Connection refused` to
+an old IP), and a failed nginx reload from a dangling certificate reference.
 
 ## Gateway paths into ChirpStack
 
