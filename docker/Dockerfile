@@ -29,6 +29,7 @@ ENV SX1302_CONFIG=/opt/sx1302_hal/global_conf.json \
     SX1302_COM_PATH=/dev/ttyACM0 \
     SX1302_GPS_PATH=/dev/ttyACM1 \
     SX1302_SERVER_ADDRESS=chirpstack-gateway-bridge \
-    SX1302_SERV_PORT=1700
+    SX1302_SERV_PORT=1700 \
+    SX1302_GATEWAY_ID=""
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

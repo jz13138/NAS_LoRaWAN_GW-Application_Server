@@ -111,9 +111,19 @@ Two independent paths feed the same ChirpStack instance over MQTT:
 `configuration/chirpstack/chirpstack.toml` enables 15 regions, each backed by a
 `region_*.toml` file. Narrow this to `eu868` to reduce startup work.
 
-The forwarder ships with `global_conf.json.sx1250.EU868.USB` and
-`gateway_ID` `AA555A0000000000`. Change the gateway ID to the EUI64 returned by
-`util_chip_id` (or `test_loragw_reg`) and register the same ID in ChirpStack.
+The forwarder ships with `global_conf.json.sx1250.EU868.USB` and a placeholder
+`gateway_ID` of `AA555A0000000000`. Start the stack once and read the real EUI64
+from the startup log:
+
+```bash
+docker compose logs sx1302-hal-packet-forwarder | grep "concentrator EUI"
+```
+
+Then put it in `.env` as `SX1302_GATEWAY_ID` and enter the same value when
+creating the gateway in the ChirpStack UI. Until both match, ChirpStack logs
+`Update gateway state: Object does not exist` and drops every uplink. The
+placeholder can still be used, but then that exact string is the gateway ID.
+
 To use a different band or concentrator type, edit the `global_conf.json`
 baked into the image and rebuild.
 

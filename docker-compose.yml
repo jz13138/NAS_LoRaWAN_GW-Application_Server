@@ -123,6 +123,10 @@ services:
       SX1302_GPS_PATH: /dev/ttyACM1
       SX1302_SERVER_ADDRESS: chirpstack-gateway-bridge
       SX1302_SERV_PORT: "1700"
+      # EUI64 of the concentrator, as printed by the HAL at startup. Must match
+      # the gateway registered in ChirpStack, or every uplink is dropped as an
+      # unknown gateway. Empty keeps the placeholder from global_conf.json.
+      SX1302_GATEWAY_ID: ${SX1302_GATEWAY_ID:-}
     devices:
       - "/dev/ttyACM0:/dev/ttyACM0"
       - "/dev/ttyACM1:/dev/ttyACM1"

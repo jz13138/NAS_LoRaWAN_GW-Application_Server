@@ -27,6 +27,13 @@ set_key server_address "${SX1302_SERVER_ADDRESS:-chirpstack-gateway-bridge}"
 set_key serv_port_up "${SX1302_SERV_PORT:-1700}"
 set_key serv_port_down "${SX1302_SERV_PORT:-1700}"
 
+# The shipped gateway_ID is a placeholder. The real EUI64 is printed by the HAL
+# at startup as "concentrator EUI: 0x...", and it has to match the gateway
+# registered in ChirpStack or every PUSH_DATA is dropped as unknown.
+if [ -n "${SX1302_GATEWAY_ID:-}" ]; then
+    set_key gateway_ID "$SX1302_GATEWAY_ID"
+fi
+
 for dev in "${SX1302_COM_PATH:-/dev/ttyACM0}" "${SX1302_GPS_PATH:-/dev/ttyACM1}"; do
     if [ ! -e "$dev" ]; then
         echo "entrypoint: $dev is missing" >&2
