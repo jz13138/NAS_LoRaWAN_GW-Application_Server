@@ -119,8 +119,12 @@ services:
     depends_on:
       - chirpstack-gateway-bridge
     environment:
-      SX1302_COM_PATH: /dev/ttyACM0
-      SX1302_GPS_PATH: /dev/ttyACM1
+      # Device nodes are env-driven because USB enumeration order follows the
+      # physical socket, not the hardware. Moving the cable moves the nodes
+      # (e.g. ttyACM0/1 -> ttyACM2/3) and only .env has to change, in one
+      # place, for both the mapping below and the config inside.
+      SX1302_COM_PATH: ${SX1302_COM_PATH:-/dev/ttyACM0}
+      SX1302_GPS_PATH: ${SX1302_GPS_PATH:-/dev/ttyACM1}
       SX1302_SERVER_ADDRESS: chirpstack-gateway-bridge
       SX1302_SERV_PORT: "1700"
       # EUI64 of the concentrator, as printed by the HAL at startup. Must match
@@ -128,8 +132,8 @@ services:
       # unknown gateway. Empty keeps the placeholder from global_conf.json.
       SX1302_GATEWAY_ID: ${SX1302_GATEWAY_ID:-}
     devices:
-      - "/dev/ttyACM0:/dev/ttyACM0"
-      - "/dev/ttyACM1:/dev/ttyACM1"
+      - "${SX1302_COM_PATH:-/dev/ttyACM0}:${SX1302_COM_PATH:-/dev/ttyACM0}"
+      - "${SX1302_GPS_PATH:-/dev/ttyACM1}:${SX1302_GPS_PATH:-/dev/ttyACM1}"
     volumes:
       - /sys/class/gpio:/sys/class/gpio
 

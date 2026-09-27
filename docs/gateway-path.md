@@ -34,10 +34,19 @@ touches TCP/IP at all.
 ```
 
   Both nodes belong to the same physical device, so their numbers are fixed
-  by the USB descriptor: function 1 is always ttyACM0, function 2 always
-  ttyACM1. They cannot swap the way two separate USB devices can. If the
-  board is replaced or replugged into a different port, confirm with
-  ls /dev/ttyACM* and set SX1302_COM_PATH / SX1302_GPS_PATH to match.
+  by the USB descriptor: function 1 is always the lower number, function 2
+  the higher. They cannot swap the way two separate USB devices can — but the
+  pair moves together with the physical socket, so replugging from one USB
+  port to another shifts both (e.g. ttyACM0/1 becomes ttyACM2/3). The compose
+  file reads both paths from `.env`, so that move is a two-line change with
+  no edits elsewhere:
+
+  SX1302_COM_PATH=/dev/ttyACM2
+  SX1302_GPS_PATH=/dev/ttyACM3
+
+  Confirm with ls -l /dev/ttyACM* after any replug: same `0483:5740` device,
+  function 1 (interface `:1.0`) is the concentrator, function 2 (`:1.2`) the
+  GPS.
 
 ## GPS: u-blox MAX-M8C on ttyACM1
 
