@@ -1,0 +1,11 @@
+**/obj/
+**/*.a
+**/*.o
+sx1302_hal/libloragw/inc/config.h
+sx1302_hal/libloragw/test_loragw_*
+sx1302_hal/packet_forwarder/lora_pkt_fwd
+sx1302_hal/util_chip_id/chip_id
+sx1302_hal/util_net_downlink/net_downlink
+sx1302_hal/util_boot/boot
+sx1302_hal/util_spectral_scan/spectral_scan
+*.log
