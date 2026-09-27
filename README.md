@@ -11,6 +11,8 @@ docker/Dockerfile             builds the SX1302 HAL from source
 docker/entrypoint.sh          patches device paths, starts the forwarder
 configuration/                ChirpStack, gateway-bridge, mosquitto, postgres
 sx1302_hal/                   vendored Semtech SX1302 HAL 2.1.0 sources
+docs/interface.md             external TCP/IP interface, published ports
+docs/gateway-path.md          SX1302 -> NAS -> ttyACM0/ACM1 -> gateway bridge
 ```
 
 `sx1302_hal/` is unmodified upstream code. The deployment files live outside it,
