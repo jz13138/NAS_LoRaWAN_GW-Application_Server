@@ -34,12 +34,39 @@ from the internet except the web UI, and even that is only for convenience.
    of `docker-compose.yml` and the `networks:` key from the two services that
    have it.
 
-2. **DNS.** Each hostname in `.env` needs an A record pointing at the reverse
-   proxy. The acme-companient uses the HTTP-01 challenge, so the record has to
-   resolve before the first `docker compose up`.
+2. **DNS.** Each hostname in `.env` needs to resolve to the reverse proxy, over
+   **both** A and AAAA. Let's Encrypt validates HTTP-01 against both records,
+   and an IPv4 client that falls back to the A record will reach whatever is
+   listening there instead. If the A record points somewhere else, IPv4 clients
+   silently get the wrong site and the certificate can fail to issue:
+
+   ```sh
+   python3 -c "import socket;print(sorted({a[4][0] for a in socket.getaddrinfo('lorawan.example.com',None,socket.AF_INET)}))"
+   ```
+
+   Keep hostnames one label below the parent domain. A wildcard certificate for
+   `*.example.com` covers `lorawan.example.com` but not
+   `api.lorawan.example.com`, and acme-companient with no DNS provider
+   credentials can only issue per-hostname certificates over HTTP-01.
 
 3. **Basic auth for the REST API**, see below. Do this before enabling the
    hostname, not after.
+
+## Coexisting with other stacks
+
+Several applications can share one nginx-proxy by joining the same `site1`
+network and taking their own hostname. Two things to watch:
+
+- Moving an application to a subdomain is not only a `VIRTUAL_HOST` change. If
+  something else is *configured* to call it, that reference has to move too. A
+  Nextcloud Collabora integration, for example, keeps the Collabora URL in
+  `oc_appconfig` and needs the new hostname in Nextcloud's `trusted_domains`,
+  because the editor is loaded in a cross-origin iframe. Changing only the proxy
+  vhost breaks the integration with no error on the proxy side.
+- Take the certificate before cutting over. Add the new hostname, confirm it
+  serves and the certificate is valid, then remove the old `VIRTUAL_HOST`.
+  Doing it the other way round means a working service is down for the duration
+  of the ACME issuance.
 
 ## Configure
 
