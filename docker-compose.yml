@@ -13,14 +13,29 @@ services:
       - MQTT_BROKER_HOST=mosquitto
       - REDIS_HOST=redis
       - POSTGRESQL_HOST=postgres
-    ports:
-      - "8080:8080"
+      # Reverse proxy discovery. An empty VIRTUAL_HOST is ignored by
+      # docker-gen, so the stack still starts without a proxy in front.
+      - VIRTUAL_HOST=${VIRTUAL_HOST_CHIRPSTACK:-}
+      - VIRTUAL_PORT=8080
+      - VIRTUAL_PROTO=http
+      - LETSENCRYPT_HOST=${LETSENCRYPT_HOST_CHIRPSTACK:-}
+      - LETSENCRYPT_EMAIL=${LETSENCRYPT_EMAIL:-}
+    labels:
+      - "com.github.jrcs.letsencrypt_nginx_proxy_companion.nginx_proxy=true"
+    networks:
+      - default
+      - site1
+    # No published port. 8080 is reachable through the reverse proxy only,
+    # otherwise it bypasses TLS and stays open on every host interface.
 
   chirpstack-gateway-bridge:
     image: chirpstack/chirpstack-gateway-bridge:4
     restart: unless-stopped
     ports:
-      - "1700:1700/udp"
+      # Only needed by gateways on other hosts. The on-host SX1302 forwarder
+      # reaches the bridge over the compose network, so this can be removed
+      # or bound to a single LAN address when no remote gateway exists.
+      - "${SEMTECH_UDP_BIND:-0.0.0.0}:1700:1700/udp"
     volumes:
       - ./configuration/chirpstack-gateway-bridge:/etc/chirpstack-gateway-bridge
     environment:
@@ -35,7 +50,9 @@ services:
     restart: unless-stopped
     command: -c /etc/chirpstack-gateway-bridge/chirpstack-gateway-bridge-basicstation-eu868.toml
     ports:
-      - "3001:3001"
+      # Unused unless a separate Basic Station node is deployed. See
+      # docs/nginx-integration.md before exposing it, the backend is plaintext.
+      - "${BASIC_STATION_BIND:-0.0.0.0}:3001:3001"
     volumes:
       - ./configuration/chirpstack-gateway-bridge:/etc/chirpstack-gateway-bridge
     depends_on:
@@ -45,10 +62,22 @@ services:
     image: chirpstack/chirpstack-rest-api:4
     restart: unless-stopped
     command: --server chirpstack:8080 --bind 0.0.0.0:8090 --insecure
-    ports:
-      - "8090:8090"
+    environment:
+      - VIRTUAL_HOST=${VIRTUAL_HOST_CHIRPSTACK_REST:-}
+      - VIRTUAL_PORT=8090
+      - VIRTUAL_PROTO=http
+      - LETSENCRYPT_HOST=${LETSENCRYPT_HOST_CHIRPSTACK_REST:-}
+      - LETSENCRYPT_EMAIL=${LETSENCRYPT_EMAIL:-}
+    labels:
+      - "com.github.jrcs.letsencrypt_nginx_proxy_companion.nginx_proxy=true"
+    networks:
+      - default
+      - site1
     depends_on:
       - chirpstack
+    # No published port. This API runs --insecure, so nginx basic auth is the
+    # only thing standing between it and the internet. Create the password
+    # file first, see docs/nginx-integration.md.
 
   postgres:
     image: postgres:14-alpine
@@ -71,16 +100,20 @@ services:
   mosquitto:
     image: eclipse-mosquitto:2
     restart: unless-stopped
-    ports:
-      - "1883:1883"
-    volumes: 
+    volumes:
       - ./configuration/mosquitto/config/:/mosquitto/config/
+    # No published port. Only chirpstack and the two bridges need the broker,
+    # and they reach it over the compose network. Publishing 1883 would put an
+    # anonymous broker on every host interface.
 
   sx1302-hal-packet-forwarder:
     build:
       context: .
       dockerfile: docker/Dockerfile
     image: sx1302-hal-packet-forwarder:2.1.0
+    # The image is built here, it does not exist in any registry. Without this
+    # a plain `docker compose up` tries to pull it and fails.
+    pull_policy: build
     restart: unless-stopped
     depends_on:
       - chirpstack-gateway-bridge
@@ -98,3 +131,11 @@ services:
 volumes:
   postgresqldata:
   redisdata:
+
+networks:
+  # Shared with the nginx-proxy stack so docker-gen can resolve chirpstack and
+  # chirpstack-rest-api. Create it once with:
+  #   docker network create site1
+  # Remove the two `networks:` keys from the services above to run standalone.
+  site1:
+    external: true

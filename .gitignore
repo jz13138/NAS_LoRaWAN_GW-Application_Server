@@ -9,3 +9,5 @@ sx1302_hal/util_net_downlink/net_downlink
 sx1302_hal/util_boot/boot
 sx1302_hal/util_spectral_scan/spectral_scan
 *.log
+.env
+configuration/mosquitto/config/mosquitto.passwd

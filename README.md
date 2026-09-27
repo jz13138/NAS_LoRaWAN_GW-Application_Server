@@ -11,8 +11,10 @@ docker/Dockerfile             builds the SX1302 HAL from source
 docker/entrypoint.sh          patches device paths, starts the forwarder
 configuration/                ChirpStack, gateway-bridge, mosquitto, postgres
 sx1302_hal/                   vendored Semtech SX1302 HAL 2.1.0 sources
+.env.example                  reverse proxy hostnames and port bindings
 docs/interface.md             external TCP/IP interface, published ports
 docs/gateway-path.md          SX1302 -> NAS -> ttyACM0/ACM1 -> gateway bridge
+docs/nginx-integration.md     nginx reverse proxy integration
 ```
 
 `sx1302_hal/` is unmodified upstream code. The deployment files live outside it,
@@ -50,17 +52,47 @@ docker compose up -d chirpstack-gateway-bridge chirpstack-gateway-bridge-basicst
 
 | Port | Proto | Service | Purpose |
 |------|-------|---------|---------|
-| 8080 | TCP | chirpstack | Web UI and gRPC API |
-| 8090 | TCP | chirpstack-rest-api | REST API (runs `--insecure`) |
-| 1883 | TCP | mosquitto | MQTT broker (anonymous) |
-| 1700 | UDP | chirpstack-gateway-bridge | Semtech UDP protocol, used by the SX1302 forwarder |
+| 1700 | UDP | chirpstack-gateway-bridge | Semtech UDP protocol, for gateways on other hosts |
 | 3001 | TCP | chirpstack-gateway-bridge-basicstation | Semtech Basic Station backend, EU868 |
 
-`postgres` (5432) and `redis` (6379) are not published; they are reachable only
-on the compose network.
+Both default to `0.0.0.0` and are settable per interface with
+`SEMTECH_UDP_BIND` and `BASIC_STATION_BIND` in `.env`. On a single-host setup
+neither is needed: the on-host SX1302 reaches the bridge over the compose
+network, and the Basic Station backend is unused.
+
+`chirpstack` (8080), `chirpstack-rest-api` (8090), `mosquitto` (1883),
+`postgres` (5432) and `redis` (6379) are not published. They are reachable
+only on the compose network, and the first three through the reverse proxy.
+See [Reverse proxy](#reverse-proxy) below.
 
 The forwarder service publishes no ports. It makes outbound UDP to
 `chirpstack-gateway-bridge:1700`, so the gateway needs no inbound connectivity.
+
+## Reverse proxy
+
+The web UI and the REST API are meant to be reached through an nginx-proxy
+setup, not directly. `chirpstack` and `chirpstack-rest-api` join the external
+`site1` network so `docker-gen` can discover them, and publish no host port, so
+the proxy is the only way in.
+
+```sh
+docker network create site1      # once, shared with the nginx stack
+cp .env.example .env             # hostnames, mail address, port bindings
+docker compose up -d --build
+```
+
+Every hostname in `.env` needs a DNS A record pointing at the proxy before the
+first start, because the certificate is issued over the HTTP-01 challenge.
+Leaving `VIRTUAL_HOST` empty keeps a service off the proxy and the stack still
+comes up.
+
+`chirpstack-rest-api` runs `--insecure`, so it has no authentication of its
+own. Put an `htpasswd` file in place before enabling its hostname, otherwise it
+is an unauthenticated management API on the internet.
+
+[docs/nginx-integration.md](docs/nginx-integration.md) has the details: the
+htpasswd recipe, splitting gRPC from the UI on port 8080, why `NETWORK_ACCESS=internal`
+breaks this particular image, and why 1883 and 1700 cannot be proxied at all.
 
 ## Gateway paths into ChirpStack
 
@@ -105,19 +137,26 @@ only through the newer `gpiochip` interface and has no legacy
 
 ## Security
 
-Change these before exposing the host beyond a trusted LAN:
-
 - `configuration/chirpstack/chirpstack.toml` `api.secret` is
   `you-must-replace-this`. Generate one with `openssl rand -base64 32`. It signs
-  UI sessions and API tokens.
-- `chirpstack-rest-api` runs with `--insecure`, disabling authentication, and is
-  published on 8090.
-- `configuration/mosquitto/config/mosquitto.conf` sets `allow_anonymous true`,
-  so any host that can reach 1883 can read all gateway traffic and inject
+  UI sessions and API tokens, so anyone who can reach the UI can mint an admin
+  token. The reverse proxy does not fix this.
+- `chirpstack-rest-api` runs with `--insecure`, so it has no authentication of
+  its own. It is not published, but it is proxied. Put an `htpasswd` file in
+  place before giving it a hostname.
+- `configuration/mosquitto/config/mosquitto.conf` sets `allow_anonymous true`.
+  That is now confined to the compose network because 1883 is not published.
+  If you republish it, follow the `password_file` recipe at the bottom of that
+  file, otherwise anyone who can reach it reads all gateway traffic and injects
   downlinks.
 - The Basic Station backend has empty `tls_cert`/`tls_key`, so it is plaintext.
+  Unused on a single-host setup, but do not expose it as is.
+- 1700/udp and 3001/tcp still bind `0.0.0.0` by default. Pin them with
+  `SEMTECH_UDP_BIND` and `BASIC_STATION_BIND` in `.env` if no remote gateway
+  needs them.
 
-Loopback-bind the management ports if the host has a routable interface:
+The management ports used to be published on `0.0.0.0` and could be
+loopback-bound instead:
 
 ```yaml
 ports:
@@ -125,6 +164,9 @@ ports:
   - "127.0.0.1:8090:8090"
   - "127.0.0.1:1883:1883"
 ```
+
+That is no longer necessary. They are not published at all, which is strictly
+safer than loopback-binding them. See [Reverse proxy](#reverse-proxy).
 
 ## Upstream
 
